@@ -4,9 +4,8 @@ Banco chave-valor persistente no estilo Bitcask, com servidor que fala um subcon
 protocolo do Redis.
 
 Os dados ficam num log append-only com CRC32 em cada registro, o índice fica num hash em
-memória e uma compactação reescreve só o que ainda está vivo. O servidor asyncio fala um
-subconjunto do protocolo do Redis (RESP2), então bibliotecas cliente do Redis conectam nele.
-Tudo em Python puro, sem dependências.
+memória e uma compactação reescreve só o que ainda está vivo. Como o servidor fala RESP2,
+bibliotecas cliente do Redis conectam nele. Tudo em Python puro, sem dependências.
 
 [![CI](https://github.com/burnoutscript/minikv/actions/workflows/ci.yml/badge.svg)](https://github.com/burnoutscript/minikv/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
@@ -15,15 +14,16 @@ Tudo em Python puro, sem dependências.
 
 ## Por que fiz isso
 
-Eu sabia usar um banco de dados, mas não sabia direito o que acontece entre o `SET` e o dado
-estar no disco. Queria entender como um banco garante que uma queda de energia no meio de uma escrita
-não estraga o que já estava salvo, e o que o `fsync` tem a ver com isso.
+Na Prumo eu uso PostgreSQL pelo Supabase todos os dias, e confio que um dado que recebeu
+"OK" está salvo. Quis entender o que sustenta essa confiança: o que acontece se a energia
+cair no meio de uma escrita, para que serve o `fsync` e por que um arquivo que só cresce no
+fim é mais fácil de recuperar depois de uma queda.
 
-O paper do Bitcask (o motor de armazenamento do Riak) tem poucas páginas e descreve um
-desenho que dá para implementar inteiro: um arquivo onde só se acrescenta, um índice em
-memória e uma compactação de tempos em tempos. Implementei esse desenho, escrevi os testes
-de recuperação de falha simulando arquivos cortados no meio, e coloquei na frente um servidor
-compatível com o protocolo do Redis para poder usar ferramentas que já existem.
+Comecei pelo paper do Bitcask, o motor de armazenamento do Riak. Ele tem poucas páginas e
+descreve um desenho que dá para implementar inteiro: um arquivo onde só se acrescenta, um
+índice em memória e uma compactação de tempos em tempos. Implementei esse desenho e escrevi
+testes que cortam arquivos no meio para simular a queda. Por último, coloquei na frente um
+servidor que fala o protocolo do Redis, para poder testar com clientes que já existem.
 
 ## Instalação
 
@@ -252,8 +252,7 @@ O motor inteiro cabe num arquivo (`store.py`), que dá para ler de uma vez.
 
 O preço é que todas as chaves precisam caber na RAM. Medi cerca de 200 bytes por chave no
 CPython com chaves de 10 bytes (o objeto `bytes` da chave, a tupla de posição e a entrada do
-dict). Também não existe busca por intervalo: `KEYS` passa
-por todas as chaves. Uma LSM-tree (LevelDB, RocksDB) resolve as duas coisas mantendo as chaves
+dict). Também não existe busca por intervalo: `KEYS` passa por todas as chaves. Uma LSM-tree (LevelDB, RocksDB) resolve as duas coisas mantendo as chaves
 ordenadas em disco, mas cada leitura pode consultar vários arquivos e precisa de filtros de Bloom
 para não ficar lenta. Para um banco em que o conjunto de chaves é pequeno e os valores podem ser
 grandes, o hash em memória é a escolha mais simples que funciona, e foi a que o Bitcask fez.
